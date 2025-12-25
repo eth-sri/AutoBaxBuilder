@@ -1,0 +1,7 @@
+/results
+**/.vscode
+**/.idea
+**/__pycache__
+/secure_code_model.egg-info
+**/.ipynb_checkpoints/
+.env
