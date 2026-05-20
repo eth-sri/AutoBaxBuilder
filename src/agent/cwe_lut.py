@@ -31,12 +31,11 @@ def fetch_cwe_info(cwe_id: int):
     else:
         description = "Description not found"
 
+    alternate_terms: list[str] = []
     alternate_term_div = soup.find("div", id="Alternate_Terms")
     if alternate_term_div:
-        alternate_terms = alternate_term_div.find_all("td", class_="subheading")  # type: ignore
-        alternate_terms = [term.text.strip() for term in alternate_terms]
-    else:
-        alternate_terms = []
+        term_elems = alternate_term_div.find_all("td", class_="subheading")  # type: ignore
+        alternate_terms = [term.text.strip() for term in term_elems]
 
     return {
         "cwe_id": cwe_id,

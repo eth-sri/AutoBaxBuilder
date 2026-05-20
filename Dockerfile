@@ -10,8 +10,8 @@ COPY . .
 
 RUN conda env create -f env.yaml
 
-RUN echo "conda activate baxbench-agent" >> ~/.bashrc
-ENV PATH /opt/conda/envs/baxbench-agent/bin:$PATH
+RUN echo "conda activate autobaxbuilder" >> ~/.bashrc
+ENV PATH /opt/conda/envs/autobaxbuilder/bin:$PATH
 ENV MPLCONFIGDIR=/tmp/matplotlib
 ENV XDG_CACHE_HOME=/tmp/.cache
 ENV DOCKER_BUILDKIT=1

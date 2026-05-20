@@ -1,35 +1,68 @@
+import importlib
+import importlib.util
 import os
+import sys
+from types import ModuleType
 
 import agent.templates as templates
 from agent.config import args, logger, scenario_folder_path
 
 
+def exported_scenario_path(it: int = 0, iv: bool = False, sec: bool = False) -> str:
+    if not iv:
+        file_name = f"{args.scenario}_iu{it}.py"
+    else:
+        file_name = f"{args.scenario}_iv.py"
+
+    if sec:
+        file_name = f"{args.scenario}_iw{it}.py"
+
+    return os.path.join(scenario_folder_path, file_name)
+
+
+def load_exported_scenario_module(
+    it: int = 0,
+    iv: bool = False,
+    sec: bool = False,
+    target_globals: dict[str, object] | None = None,
+) -> ModuleType:
+    full_path = os.path.abspath(exported_scenario_path(it, iv, sec))
+    module_dir = os.path.dirname(full_path)
+    module_name = os.path.splitext(os.path.basename(full_path))[0]
+
+    if not module_name.isidentifier():
+        raise ValueError(f"Generated scenario module is not importable: {module_name}")
+
+    if module_dir in sys.path:
+        sys.path.remove(module_dir)
+    sys.path.insert(0, module_dir)
+
+    importlib.invalidate_caches()
+    sys.modules.pop(module_name, None)
+
+    spec = importlib.util.spec_from_file_location(module_name, full_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not import generated scenario module: {full_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+    if target_globals is not None:
+        target_globals.update(
+            {
+                name: value
+                for name, value in vars(module).items()
+                if not name.startswith("__")
+            }
+        )
+
+    return module
+
+
 def export_scenario_code(
     scenario: dict, it: int = 0, iv: bool = False, write: bool = True, sec: bool = False
 ) -> str:
-    """Export scenario data to a Python code file.
-
-    Args:
-        scenario: Dictionary containing scenario data including:
-            - header_code: Import statements and helper code
-            - functional_tests_code: List of functional test implementations
-            - security_tests_code: List of security test implementations (if sec=True)
-            - schema: OpenAPI schema specification
-            - text_spec: Text description of the scenario
-            - title, description: Scenario metadata
-            - needs_db, needs_secret: Resource requirements
-            - scenario_instructions: Setup instructions
-            - functional_tests_names: List of functional test names
-            - security_tests_names: List of security test names (if sec=True)
-            - needed_packages: Optional list of required packages
-        it: Iteration number for naming (used in _iu{it} or _iw{it} suffix)
-        iv: If True, generates an "iv" (verified) version file
-        write: If True, writes the code to a file; if False, only returns the code string
-        sec: If True, includes security tests in the export
-
-    Returns:
-        The generated Python code as a string
-    """
     needed_packages_param = ""
     if "needed_packages" in scenario:
         needed_packages_param = f"\n    needed_packages={scenario['needed_packages']},"
@@ -70,13 +103,7 @@ def export_scenario_code(
             scenario_needed_packages=needed_packages_param,
         )
 
-    if not iv:
-        full_path = os.path.join(scenario_folder_path, f"{args.scenario}_iu{it}.py")
-    else:
-        full_path = os.path.join(scenario_folder_path, f"{args.scenario}_iv.py")
-
-    if sec:
-        full_path = os.path.join(scenario_folder_path, f"{args.scenario}_iw{it}.py")
+    full_path = exported_scenario_path(it, iv, sec)
 
     if not write:
         return code

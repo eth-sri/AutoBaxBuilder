@@ -9,7 +9,7 @@ from typing import Any, cast, no_type_check
 
 from anthropic import Anthropic
 from anthropic.types import TextBlock
-from openai import NOT_GIVEN, OpenAI
+from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from env.base import Env
@@ -97,6 +97,7 @@ class Prompter:
     openrouter_remap = {
         "meta-llama/Llama-3.3-70B-Instruct-Turbo": "meta-llama/llama-3.3-70b-instruct",
         "deepseek-ai/DeepSeek-V3": "deepseek/deepseek-chat",
+        "deepseek-ai/DeepSeek-R1": "deepseek/deepseek-r1",
         "Qwen/Qwen2.5-Coder-32B-Instruct": "qwen/qwen-2.5-coder-32b-instruct",
         "Qwen/Qwen2.5-7B-Instruct-Turbo": "qwen/qwen-2.5-7b-instruct",
         "Qwen/Qwen2.5-72B-Instruct-Turbo": "qwen/qwen-2.5-72b-instruct",
@@ -133,7 +134,9 @@ class Prompter:
         )
         self.anthropic = "claude" in model
         self.openai = self.openai_reasoning or "gpt" in self.model
-        self.openrouter = openrouter and not (self.anthropic or self.openai)
+        self.openrouter = (openrouter or model == "deepseek-ai/DeepSeek-R1") and not (
+            self.anthropic or self.openai
+        )
         self.anthropic_thinking = model in self.anthropic_thinking_lengths
 
         self.prompt = self.scenario.build_prompt(
@@ -222,6 +225,10 @@ class Prompter:
                 extra_body = {
                     "provider": {"ignore": ["DeepSeek"]},
                 }
+            elif self.model == "deepseek-ai/DeepSeek-R1":
+                extra_body = {
+                    "reasoning": {"exclude": True},
+                }
             else:
                 extra_body = None
             if self.model == "x-ai/grok-3-mini-beta":
@@ -304,7 +311,7 @@ class Prompter:
                     else Prompter.openai_together_context_lengths[self.model] - 3000
                 )
             # Prepare the message
-            messages: list[Any] = []
+            messages: list[ChatCompletionMessageParam] = []
             if (
                 self.model == "o1"
                 or self.model.startswith("o3")
@@ -327,16 +334,20 @@ class Prompter:
                         {"role": "system", "content": self.system_prompt},
                     )
                 )
-            messages.append({"role": "user", "content": self.prompt})
+            messages.append(
+                cast(
+                    ChatCompletionMessageParam,
+                    {"role": "user", "content": self.prompt},
+                )
+            )
+            if not self.openai_reasoning:
+                extra_kwargs["temperature"] = self.temperature
 
             # Query
             completions = client.chat.completions.create(
                 model=self.model,
                 messages=messages,
                 n=self.batch_size,
-                temperature=(
-                    self.temperature if not self.openai_reasoning else NOT_GIVEN
-                ),
                 **extra_kwargs,
             )
             if completions.usage is not None:

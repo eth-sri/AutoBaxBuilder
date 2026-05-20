@@ -6,8 +6,8 @@ import pickle
 from collections import defaultdict
 from pathlib import Path, PosixPath
 
-from agent import export_scenario_code
 from agent.config import args, get_baxbench_args, logger, scenario_folder_path
+from agent.export import export_scenario_code, load_exported_scenario_module
 from agent.generate_functional_tests import generate_tests_code, generate_tests_spec
 from agent.iterate_functional_tests import iterate_blackbox, iterate_whitebox
 from agent.utils import (
@@ -44,7 +44,7 @@ def generate_and_iterate_tests() -> None:
             encoding="utf-8",
         ) as file:
             scenario = json.load(file)
-            code = export_scenario_code(scenario, write=False)
+            export_scenario_code(scenario)
     else:
         with open(
             os.path.join(scenario_folder_path, f"{args.scenario}.json"),
@@ -76,9 +76,9 @@ def generate_and_iterate_tests() -> None:
         ) as file:
             json.dump(scenario, file, indent=4)
 
-        code = export_scenario_code(scenario)
+        export_scenario_code(scenario)
 
-    exec(code, globals())
+    load_exported_scenario_module(target_globals=globals())
 
     if os.path.exists(
         os.path.join(scenario_folder_path, f"{args.scenario}_tasklist.json")
@@ -385,8 +385,8 @@ def generate_and_iterate_tests() -> None:
             ) as file:
                 deep_update(full_results, json.load(file))
         else:
-            code = export_scenario_code(scenario, it)
-            exec(code, globals())
+            export_scenario_code(scenario, it)
+            load_exported_scenario_module(it, target_globals=globals())
 
             deep_update(full_results, test_and_evaluate_baxbench(SCENARIO))
 

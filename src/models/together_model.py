@@ -53,8 +53,9 @@ class TogetherModel(BaseModel):
                 thinking=False,
                 purpose=purpose,
             )
-        text = completion.choices[0].message.content
-        if text is None or len(text) == 0:
+        message = completion.choices[0].message
+        text = message.content if message is not None else None
+        if not isinstance(text, str) or len(text) == 0:
             raise Exception("Empty response")
         else:
             return Response(role="assistant", text=text)
@@ -89,8 +90,9 @@ class TogetherModel(BaseModel):
                 purpose=purpose,
             )
 
-        text = completion.choices[0].message.content
-        if len(text) == 0:
+        message = completion.choices[0].message
+        text = message.content if message is not None else None
+        if not isinstance(text, str) or len(text) == 0:
             raise Exception("Empty response")
         else:
             reasoning, text = self._parse_reasoning(text)

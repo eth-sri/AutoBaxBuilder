@@ -1,18 +1,14 @@
-import glob
 import logging
 import os
 import random
-from argparse import ArgumentParser
+import socket
+from argparse import ArgumentParser, Namespace
+from typing import Sequence
 
-import psutil
-
-from baxbench_wrapper import baxbench_parse_args
 from models import get_model
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-)
+
 
 # Supported model providers for the agent
 MODEL_PROVIDERS = ["openai", "together", "anthropic", "openrouter"]
@@ -25,18 +21,7 @@ MODEL_LIST = [
     "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
 ]
 
-# for ablation
-# MODEL_LIST = [
-#     "claude-sonnet-4-20250514",
-#     "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-#     "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
-# ]
-
 reasoning_model = get_model("gpt-5", "openai", True, "medium")
-
-# for ablation
-# reasoning_model = get_model("claude-sonnet-4-5-20250929", "anthropic", True, 32000)
-
 
 ENV_LIST = [
     "Python-FastAPI",
@@ -57,6 +42,10 @@ MITRE_TOP_25 = [
     20,  # Improper Input Validation
 ]
 
+args = None
+scenario_folder_path = None
+_initialized = False
+
 
 def get_baxbench_args(mode, model_list=MODEL_LIST, env_list=ENV_LIST, **kwargs):
     """Generate BaxBench arguments for running scenario tests.
@@ -72,22 +61,30 @@ def get_baxbench_args(mode, model_list=MODEL_LIST, env_list=ENV_LIST, **kwargs):
     """
 
     def get_random_free_port_far_from_used(
-        min_port=12345, max_port=48000, safe_distance=100, max_attempts=100
+        min_port=12345, max_port=48000, safe_distance=50, max_attempts=100
     ):
-        """Find a random free port that is far from any currently used ports"""
-        used_ports = sorted(
-            {
-                conn.laddr.port
-                for conn in psutil.net_connections(kind="inet")
-                if conn.laddr and min_port <= conn.laddr.port <= max_port
-            }
-        )
+        """Find a random free port range start without inspecting other processes."""
+
+        def can_bind(port: int) -> bool:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                try:
+                    sock.bind(("0.0.0.0", port))
+                except OSError:
+                    return False
+            return True
+
+        highest_start = max_port - safe_distance
+        if highest_start < min_port:
+            raise ValueError("Port search range is smaller than the safety window")
 
         for _ in range(max_attempts):
-            candidate = random.randint(min_port, max_port)
-            if all(abs(candidate - used) > safe_distance for used in used_ports):
+            candidate = random.randint(min_port, highest_start)
+            if all(
+                can_bind(port)
+                for port in range(candidate, candidate + safe_distance + 1)
+            ):
                 return candidate
-        raise RuntimeError("Could not find a free port after multiple attempts")
+        raise RuntimeError("Could not find a free port range after multiple attempts")
 
     base_args = [
         "--models",
@@ -115,91 +112,116 @@ def get_baxbench_args(mode, model_list=MODEL_LIST, env_list=ENV_LIST, **kwargs):
     if mode in ["generate", "test"]:
         base_args.append("-f")
     print(" ".join(base_args))
+    from baxbench_wrapper import baxbench_parse_args
+
     return baxbench_parse_args(base_args)
 
 
-parser = ArgumentParser()
-parser.add_argument(
-    "--difficulty",
-    type=int,
-    default=5,
-    help="Difficulty of the backend, characterized as max. number of endpoints",
-)
-parser.add_argument(
-    "--N_RETRIES",
-    type=int,
-    default=3,
-    help="Max. number of attempts to fix invalid/erroronous/unparsable output in an agentic loop",
-)
-parser.add_argument(
-    "--N_SOL_STEPS",
-    type=int,
-    default=5,
-    help="Number of solution iteration steps",
-)
-parser.add_argument(
-    "--N_TEST_STEPS",
-    type=int,
-    default=5,
-    help="Number of test iteration steps",
-)
-
-parser.add_argument(
-    "--N_SEC_STEPS",
-    type=int,
-    default=5,
-    help="Number of security test iterations",
-)
-
-parser.add_argument(
-    "--debug",
-    action="store_true",
-    help="Debug mode",
-)
-parser.add_argument(
-    "--path",
-    default="./artifacts/",
-    help="Path to artifacts folder",
-)
-
-group = parser.add_mutually_exclusive_group(required=True)
-group.add_argument(
-    "--generate_scenarios", action="store_true", help="Generate scenarios"
-)
-group.add_argument("--generate_tests", action="store_true", help="Generate tests")
-group.add_argument("--generate_exploits", action="store_true", help="Generate exploits")
-
-parser.add_argument(
-    "--scenario",
-    type=str,
-    help="Scenario name (required if --generate_tests or --generate_exploits is set)",
-)
-
-args = parser.parse_args()
-
-if (args.generate_tests or args.generate_exploits) and not args.scenario:
-    parser.error(
-        "--scenario is required when using --generate_tests or --generate_exploits"
+def build_parser() -> ArgumentParser:
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--difficulty",
+        type=int,
+        default=5,
+        help="Difficulty of the backend, characterized as max. number of endpoints",
+    )
+    parser.add_argument(
+        "--N_RETRIES",
+        type=int,
+        default=3,
+        help="Max. number of attempts to fix invalid/erroronous/unparsable output in an agentic loop",
+    )
+    parser.add_argument(
+        "--N_SOL_STEPS",
+        type=int,
+        default=5,
+        help="Number of solution iteration steps",
+    )
+    parser.add_argument(
+        "--N_TEST_STEPS",
+        type=int,
+        default=5,
+        help="Number of test iteration steps",
     )
 
-logger.info(f"Parsed command-line arguments: {args}")
-
-# Verify that the provided arguments are valid
-if not os.path.exists(args.path):
-    parser.error(f"Invalid path {args.path}")
-
-scenario_folder_path = os.path.join(
-    args.path, args.scenario if args.scenario is not None else ""
-)
-if not os.path.exists(scenario_folder_path):
-    parser.error(f"Invalid path {scenario_folder_path}")
-
-if args.scenario and not os.path.isfile(
-    os.path.join(scenario_folder_path, f"{args.scenario}.json")
-):
-    parser.error(
-        f"File {args.scenario}.json not found in directory {scenario_folder_path}"
+    parser.add_argument(
+        "--N_SEC_STEPS",
+        type=int,
+        default=5,
+        help="Number of security test iterations",
     )
 
-for file in glob.glob(os.path.join(args.path, "token_usage*")):
-    os.remove(file)
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Debug mode",
+    )
+    parser.add_argument(
+        "--path",
+        default="./artifacts/",
+        help="Path to artifacts folder",
+    )
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--generate_scenarios", action="store_true", help="Generate scenarios"
+    )
+    group.add_argument("--generate_tests", action="store_true", help="Generate tests")
+    group.add_argument(
+        "--generate_exploits", action="store_true", help="Generate exploits"
+    )
+
+    parser.add_argument(
+        "--scenario",
+        type=str,
+        help="Scenario name (required if --generate_tests or --generate_exploits is set)",
+    )
+
+    return parser
+
+
+def initialize_config(argv: Sequence[str] | None = None) -> Namespace:
+    global _initialized, args, reasoning_model, scenario_folder_path
+
+    if _initialized:
+        assert args is not None
+        return args
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
+
+    parser = build_parser()
+    parsed_args = parser.parse_args(argv)
+
+    if (parsed_args.generate_tests or parsed_args.generate_exploits) and not (
+        parsed_args.scenario
+    ):
+        parser.error(
+            "--scenario is required when using --generate_tests or --generate_exploits"
+        )
+
+    logger.info(f"Parsed command-line arguments: {parsed_args}")
+
+    # Verify that the provided arguments are valid
+    if not os.path.exists(parsed_args.path):
+        parser.error(f"Invalid path {parsed_args.path}")
+
+    parsed_scenario_folder_path = os.path.join(
+        parsed_args.path,
+        parsed_args.scenario if parsed_args.scenario is not None else "",
+    )
+    if not os.path.exists(parsed_scenario_folder_path):
+        parser.error(f"Invalid path {parsed_scenario_folder_path}")
+
+    if parsed_args.scenario and not os.path.isfile(
+        os.path.join(parsed_scenario_folder_path, f"{parsed_args.scenario}.json")
+    ):
+        parser.error(
+            f"File {parsed_args.scenario}.json not found in directory {parsed_scenario_folder_path}"
+        )
+
+    args = parsed_args
+    scenario_folder_path = parsed_scenario_folder_path
+    _initialized = True
+    return parsed_args

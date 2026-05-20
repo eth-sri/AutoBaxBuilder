@@ -58,13 +58,13 @@ The project uses the conda package manager. Please install it from [here](https:
 Then, the environment can be installed by running the following command:
 
 ```
-conda env create -n autobaxbench -f env.yaml
+conda env create -n autobaxbuilder -f env.yaml
 ```
 
 Activate the environment:
 
 ```
-conda activate autobaxbench
+conda activate autobaxbuilder
 ```
 
 Then, install the module:
@@ -89,19 +89,37 @@ Optionally, set up the pre-commit hooks:
 pre-commit install
 ```
 
+
 ## Generating New Scenarios with AutoBaxBuilder
 
+Ensure the docker daemon is running. Then, either use the convenience script (recommended) or run the stages manually.
+
+### Using the Convenience Script
+From the repository root, `autobaxbuilder.sh` runs the full generation pipeline for one or more scenarios. Usage: `./autobaxbuilder.sh [OPTIONS]`
+
+```bash
+Options: 
+  -n, --n-scenarios N    Total scenarios to generate                    (default: 1)
+  -P, --parallel N       Parallel workers                               (default: 1)
+  -d, --difficulty N     Number of endpoints: 1=easy 3=medium 5=hard    (default: 3)
+  -p, --path PATH        Artifacts base directory                       (default: <script_dir>/artifacts)
+  -v, --debug            Enable debug output                            (default: off)
+```
+
+The script generates scenarios, tests, and exploits, then copies the latest generated scenario `.py` file into the artifacts directory.
+
+### Manually
 Run AutoBaxBuilder from the repository root with `python src/main.py`. It runs in 3 modes, specified by the 3 flags:
 
-### Modes
+#### Modes
 - `--generate_scenarios`: Generate scenarios
 - `--generate_tests`: Generate tests (requires `--scenario` parameter)
 - `--generate_exploits`: Generate exploits (requires `--scenario` parameter)
 
-### Required Parameters
+#### Required Parameters
 - `--scenario`: Scenario name (required when using `--generate_tests` or `--generate_exploits`)
 
-### Optional Parameters
+#### Optional Parameters
 - `--difficulty N`: Number of endpoints of the scenario
 - `--N_RETRIES N`: Number recovery steps in agentic retry loops
 - `--N_SOL_STEPS N`: Maximum steps for solution iteration
@@ -110,7 +128,7 @@ Run AutoBaxBuilder from the repository root with `python src/main.py`. It runs i
 - `--debug`: Debug mode (print additional information)
 - `--path PATH`: Artifact path
 
-### Examples
+#### Examples
 ```bash
 # Generate scenarios
 python src/main.py --generate_scenarios
@@ -146,7 +164,7 @@ The `.py` artifacts the pipeline produces can directly be used as novel scenario
 
 ## Evaluating AutoBaxBuilder
 
-The AutoBaxBench scenarios are included with and without CWE-400 in `src/scenarios/with_cwe_400` and `src/scenarios/without_cwe_400` respectively. When generating your own scenarios, these are stored in the `artifacts/` directory by default. The latest artifact is the latest `artifacts/scenario_name/*_iw*.py` file. To run BaxBench with these scenarios and reproduce our evaluation results, follow the following steps.
+The AutoBaxBench scenarios are included with and without CWE-400 in `src/scenarios/with_cwe_400` and `src/scenarios/without_cwe_400` respectively. The scenarios of our alternative model ablation are in `src/scenarios/alt_model_ablation`. When generating your own scenarios, these are stored in the `artifacts/` directory by default. The latest artifact is the latest `artifacts/scenario_name/*_iw*.py` file. To run BaxBench with these scenarios and reproduce our evaluation results, follow the following steps.
 
 ### 1. Clone the BaxBench Repository
 

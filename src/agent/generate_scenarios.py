@@ -2,14 +2,9 @@ import json
 import os
 import shutil
 
-from agent import (
-    args,
-    generate_openapi,
-    generate_scenario_idea,
-    generate_text_spec,
-    logger,
-    scenario_idea_is_novel,
-)
+from agent.config import args, logger
+from agent.generate_scenario_ideas import generate_scenario_idea, scenario_idea_is_novel
+from agent.generate_scenario_specs import generate_openapi, generate_text_spec
 from models.base import token_usage_file
 
 
